@@ -487,10 +487,23 @@
             localStorage.setItem(STORAGE_KEY, JSON.stringify(decks));
         }
 
-        // 未習得（level < 2）の問題総数をカウントする関数
-        function getUnmasteredCardCount(deck) {
-            if (!deck.cards) return 0;
-            return deck.cards.filter(c => (c.level || 0) < 2).length;
+        // 現在の「開放範囲」の中で、今すぐ出題対象になる問題数をカウントする関数
+        function getAvailableCardCount(deck) {
+            if (!deck.cards || deck.cards.length === 0) return 0;
+            
+            // Chunkがまだ未設定の場合は初期化時と同様に計算
+            const chunkSize = deck.chunkSize || Math.floor(Math.random() * 51) + 50;
+            const currentChunkIndex = deck.currentChunkIndex || Math.min(chunkSize, deck.cards.length);
+            
+            const activeCards = deck.cards.slice(0, currentChunkIndex);
+            const now = new Date().getTime();
+
+            // 「未着手（Level 0）」または「復習期限（nextReviewDate）を過ぎた」問題をカウント
+            return activeCards.filter(c => {
+                if ((c.level || 0) === 0) return true;
+                if (!c.nextReviewDate) return true;
+                return new Date(c.nextReviewDate).getTime() <= now;
+            }).length;
         }
 
         function renderDeckList() {
@@ -519,7 +532,7 @@
             } else {
                 emptyEl.classList.add('hidden');
                 decks.forEach(deck => {
-                    const unmasteredCount = getUnmasteredCardCount(deck);
+                    const availableCount = getAvailableCardCount(deck);
                     const cardEl = document.createElement('div');
                     cardEl.className = 'deck-card';
                     cardEl.innerHTML = `
@@ -529,8 +542,8 @@
                                 <div class="deck-sub">総問題数: ${deck.cards.length}問</div>
                             </div>
                             <div class="deck-badge">
-                                <div class="badge-num ${unmasteredCount === 0 ? 'zero' : ''}">${unmasteredCount}</div>
-                                <div class="badge-label">未習得</div>
+                                <div class="badge-num ${availableCount === 0 ? 'zero' : ''}">${availableCount}</div>
+                                <div class="badge-label">出題可能</div>
                             </div>
                         </div>
                         <div class="deck-actions-bar">
@@ -622,11 +635,6 @@
                 const dueCards = activeCards.filter(c => !c.nextReviewDate || new Date(c.nextReviewDate).getTime() <= now);
                 if (dueCards.length > 0) {
                     chosen = dueCards[Math.floor(Math.random() * dueCards.length)];
-                } else {
-                    const unmastered = activeCards.filter(c => (c.level || 0) < 2);
-                    if (unmastered.length > 0) {
-                        chosen = unmastered[Math.floor(Math.random() * unmastered.length)];
-                    }
                 }
             }
 
