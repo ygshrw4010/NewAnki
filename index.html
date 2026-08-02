@@ -52,7 +52,7 @@
             flex-direction: column;
         }
 
-        /* Safe area support for iOS */
+        /* Header */
         header {
             padding-top: max(12px, env(safe-area-inset-top));
             padding-left: 16px;
@@ -271,7 +271,6 @@
             opacity: 0.9;
         }
 
-        /* Interactive Touch Overlay */
         .touch-overlay {
             position: absolute;
             top: 0;
@@ -287,7 +286,6 @@
             height: 100%;
         }
 
-        /* Touch visual feedback overlay */
         .feedback-overlay {
             position: absolute;
             top: 0;
@@ -374,7 +372,6 @@
             display: none !important;
         }
 
-        /* Empty state */
         .empty-state {
             text-align: center;
             padding: 40px 20px;
@@ -389,14 +386,12 @@
 </head>
 <body>
 
-    <!-- Header -->
     <header id="main-header">
         <button id="btn-left" class="btn" style="visibility: hidden;">1つ前</button>
         <h1 id="header-title">暗記アプリ</h1>
         <button id="btn-right" class="btn">＋ 作成</button>
     </header>
 
-    <!-- Main Container -->
     <div class="container">
         <!-- Deck List View -->
         <div id="deck-list-view">
@@ -434,7 +429,6 @@
                     <p style="color: var(--text-secondary);">全問題暗記済みか、復習時間をお待ちください。</p>
                 </div>
 
-                <!-- Touch Zone for User Taps -->
                 <div id="touch-overlay" class="touch-overlay">
                     <div id="touch-left" class="touch-zone"></div>
                     <div id="touch-right" class="touch-zone"></div>
@@ -448,10 +442,8 @@
         </div>
     </div>
 
-    <!-- Hidden File Input -->
     <input type="file" id="csv-file-input" accept=".csv, .txt">
 
-    <!-- Modal for New Deck -->
     <div id="modal-new-deck" class="modal-overlay hidden">
         <div class="modal">
             <div class="modal-title">新規デッキ作成</div>
@@ -464,17 +456,15 @@
     </div>
 
     <script>
-        // Data Structure & Storage
         const STORAGE_KEY = 'ANKI_APP_DECKS_DATA_V2';
 
         let decks = [];
         let currentDeckId = null;
         let currentCard = null;
         let isAnswerShown = false;
-        let historyStack = []; // Undo functionality
+        let historyStack = [];
         let targetDeckForCSV = null;
 
-        // Initialize App
         function initApp() {
             loadData();
             renderDeckList();
@@ -497,20 +487,12 @@
             localStorage.setItem(STORAGE_KEY, JSON.stringify(decks));
         }
 
-        // Helper: Calculate due cards for deck
-        function getDueCardCount(deck) {
-            const now = new Date().getTime();
-            const chunkBoundary = Math.min(deck.currentChunkIndex || 0, deck.cards.length);
-            const activeCards = deck.cards.slice(0, chunkBoundary);
-            
-            return activeCards.filter(c => {
-                const nextDate = c.nextReviewDate ? new Date(c.nextReviewDate).getTime() : 0;
-                const isMastered = (c.level || 0) >= 2;
-                return nextDate <= now || !isMastered;
-            }).length;
+        // 未習得（level < 2）の問題総数をカウントする関数
+        function getUnmasteredCardCount(deck) {
+            if (!deck.cards) return 0;
+            return deck.cards.filter(c => (c.level || 0) < 2).length;
         }
 
-        // Render Deck List Screen
         function renderDeckList() {
             currentDeckId = null;
             document.getElementById('header-title').innerText = '暗記デッキ一覧';
@@ -537,7 +519,7 @@
             } else {
                 emptyEl.classList.add('hidden');
                 decks.forEach(deck => {
-                    const dueCount = getDueCardCount(deck);
+                    const unmasteredCount = getUnmasteredCardCount(deck);
                     const cardEl = document.createElement('div');
                     cardEl.className = 'deck-card';
                     cardEl.innerHTML = `
@@ -547,8 +529,8 @@
                                 <div class="deck-sub">総問題数: ${deck.cards.length}問</div>
                             </div>
                             <div class="deck-badge">
-                                <div class="badge-num ${dueCount === 0 ? 'zero' : ''}">${dueCount}</div>
-                                <div class="badge-label">学習対象</div>
+                                <div class="badge-num ${unmasteredCount === 0 ? 'zero' : ''}">${unmasteredCount}</div>
+                                <div class="badge-label">未習得</div>
                             </div>
                         </div>
                         <div class="deck-actions-bar">
@@ -562,13 +544,11 @@
             }
         }
 
-        // Trigger CSV import for a specific deck in list view
         function triggerCSVImportForDeck(deckId) {
             targetDeckForCSV = deckId;
             document.getElementById('csv-file-input').click();
         }
 
-        // Open Deck / Enter Study Screen
         function openDeck(deckId) {
             currentDeckId = deckId;
             const deck = decks.find(d => d.id === deckId);
@@ -598,12 +578,11 @@
             pickNextCard();
         }
 
-        // Chunking Strategy (50 ~ 100 questions)
         function checkAndUpdateChunk(deck) {
             if (!deck.cards || deck.cards.length === 0) return;
 
             if (!deck.chunkSize) {
-                deck.chunkSize = Math.floor(Math.random() * 51) + 50; // 50 to 100
+                deck.chunkSize = Math.floor(Math.random() * 51) + 50;
                 deck.currentChunkIndex = Math.min(deck.chunkSize, deck.cards.length);
             }
 
@@ -611,7 +590,6 @@
             const activeCards = deck.cards.slice(0, currentEnd);
             const masteredCount = activeCards.filter(c => (c.level || 0) >= 2).length;
 
-            // If >= 80% mastered in current chunk, expand chunk
             if (masteredCount >= Math.floor(activeCards.length * 0.8) && currentEnd < deck.cards.length) {
                 const nextChunkIncrement = Math.floor(Math.random() * 51) + 50;
                 deck.currentChunkIndex = Math.min(deck.currentChunkIndex + nextChunkIncrement, deck.cards.length);
@@ -619,7 +597,6 @@
             }
         }
 
-        // Pick next card randomly from active scope
         function pickNextCard() {
             const deck = decks.find(d => d.id === currentDeckId);
             if (!deck || deck.cards.length === 0) {
@@ -636,19 +613,16 @@
 
             updateChunkInfo(currentEnd, deck.cards.length);
 
-            // Priority 1: Level 0 (Repeat priority / due)
             const urgentCards = activeCards.filter(c => (c.level || 0) === 0 && (!c.nextReviewDate || new Date(c.nextReviewDate).getTime() <= now));
             
             let chosen = null;
             if (urgentCards.length > 0) {
                 chosen = urgentCards[Math.floor(Math.random() * urgentCards.length)];
             } else {
-                // Priority 2: Due for review
                 const dueCards = activeCards.filter(c => !c.nextReviewDate || new Date(c.nextReviewDate).getTime() <= now);
                 if (dueCards.length > 0) {
                     chosen = dueCards[Math.floor(Math.random() * dueCards.length)];
                 } else {
-                    // Priority 3: Not mastered
                     const unmastered = activeCards.filter(c => (c.level || 0) < 2);
                     if (unmastered.length > 0) {
                         chosen = unmastered[Math.floor(Math.random() * unmastered.length)];
@@ -715,38 +689,31 @@
             }
         }
 
-        // Tap Handlers
         function handleTap(isRight) {
             if (!currentCard) return;
 
-            // Step 1: Reveal Answer if not shown
             if (!isAnswerShown) {
                 isAnswerShown = true;
                 document.getElementById('answer-container').classList.remove('hidden');
                 return;
             }
 
-            // Step 2: Record Answer & Move to Next Card
             const deck = decks.find(d => d.id === currentDeckId);
             const cardIndex = deck.cards.findIndex(c => c.id === currentCard.id);
             if (cardIndex === -1) return;
 
-            // Push to History Stack (Undo)
             historyStack.push({
                 cardIndex: cardIndex,
                 cardData: JSON.parse(JSON.stringify(deck.cards[cardIndex]))
             });
 
-            // Update Level and Next Review Date
             let card = deck.cards[cardIndex];
             if (isRight) {
-                // Mastered / Correct -> High delay
                 card.level = (card.level || 0) + 1;
-                const intervalMinutes = Math.pow(3, card.level) * 30; // Increasing interval
+                const intervalMinutes = Math.pow(3, card.level) * 30;
                 card.nextReviewDate = new Date(Date.now() + intervalMinutes * 60 * 1000).toISOString();
                 triggerFlash('right');
             } else {
-                // Repeat -> Low level / High frequency
                 card.level = 0;
                 card.nextReviewDate = new Date().toISOString();
                 triggerFlash('left');
@@ -756,7 +723,6 @@
             pickNextCard();
         }
 
-        // Return to previous card (Undo) -> User requested: Do NOT show answer/explanation upon undo! Show question screen.
         function undoCardAction() {
             if (historyStack.length === 0) return;
             const last = historyStack.pop();
@@ -767,7 +733,7 @@
             saveData();
 
             currentCard = deck.cards[last.cardIndex];
-            isAnswerShown = false; // Hide answer when undoing to show question screen
+            isAnswerShown = false;
             renderCurrentCard();
             showEmptyCardState(false);
             updateUndoButtonState();
@@ -791,7 +757,6 @@
             }, 200);
         }
 
-        // Reset Deck Progress from Deck List
         function resetDeckProgress(deckId) {
             const deck = decks.find(d => d.id === deckId);
             if (!deck) return;
@@ -810,7 +775,6 @@
             renderDeckList();
         }
 
-        // Delete Deck
         function deleteDeck(deckId) {
             const deck = decks.find(d => d.id === deckId);
             if (!deck) return;
@@ -821,7 +785,6 @@
             renderDeckList();
         }
 
-        // Modal for Deck Creation
         function showNewDeckModal() {
             document.getElementById('deck-name-input').value = '';
             document.getElementById('modal-new-deck').classList.remove('hidden');
@@ -846,7 +809,6 @@
             renderDeckList();
         }
 
-        // CSV Import Handling
         function handleCSVUpload(file) {
             if (!file || !targetDeckForCSV) return;
 
@@ -876,7 +838,6 @@
             reader.readAsText(file, 'UTF-8');
         }
 
-        // Robust CSV Parser
         function parseCSV(text) {
             const lines = text.split(/\r?\n/);
             const cards = [];
@@ -947,7 +908,6 @@
             });
         }
 
-        // Setup Event Listeners
         function setupEventListeners() {
             document.getElementById('touch-left').onclick = () => handleTap(false);
             document.getElementById('touch-right').onclick = () => handleTap(true);
@@ -960,12 +920,11 @@
             document.getElementById('csv-file-input').onchange = (e) => {
                 if (e.target.files.length > 0) {
                     handleCSVUpload(e.target.files[0]);
-                    e.target.value = ''; // Reset input
+                    e.target.value = '';
                 }
             };
         }
 
-        // Run App
         window.onload = initApp;
     </script>
 </body>
