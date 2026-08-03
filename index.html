@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="暗記アプリ">
-    <title>暗記アプリ</title>
+    <meta name="apple-mobile-web-app-title" content="NewAnki">
+    <title>NewAnki</title>
     <style>
         :root {
             --bg-primary: #f2f2f7;
@@ -425,8 +425,8 @@
                 </div>
 
                 <div id="empty-card-state" class="empty-state hidden">
-                    <p style="font-size: 15px; margin-bottom: 8px;">🎉 現在復習すべき問題はありません</p>
-                    <p style="color: var(--text-secondary);">次回の復習時間をお待ちいただくか、新しい範囲を開放してください。</p>
+                    <p style="font-size: 15px; margin-bottom: 8px;">🎉 すべてのカードが復習待ちです！</p>
+                    <p style="color: var(--text-secondary);">デッキ内の全問題が開放され、全て復習待ちの状態です。<br>時間をおいてから再度学習してください。</p>
                 </div>
 
                 <div id="touch-overlay" class="touch-overlay">
@@ -603,7 +603,7 @@
             pickNextCard();
         }
 
-        // ブロック開放の判定関数（Level 4 以上のカードが70%以上で次を開放）
+        // ブロック開放判定（今すぐ出題できるカードがゼロ、または70%達成で問答無用に次を開放）
         function checkAndUpdateChunk(deck) {
             if (!deck.cards || deck.cards.length === 0) return;
 
@@ -613,17 +613,24 @@
             }
 
             let currentEnd = Math.min(deck.currentChunkIndex, deck.cards.length);
-            
-            // ループ処理で、70%達成している限り次のブロックを順次開放していく
+            const now = new Date().getTime();
+
             while (currentEnd < deck.cards.length) {
                 const activeCards = deck.cards.slice(0, currentEnd);
                 
-                // Level 4 以上のカード数をカウント
+                // 1. Level 4 以上のカード割合
                 const passedCount = activeCards.filter(c => (c.level || 0) >= CHUNK_PASS_LEVEL).length;
                 const achievementRate = passedCount / activeCards.length;
 
-                // 達成度が 70% (0.7) 以上の場合、次の 50〜100 問を開放
-                if (achievementRate >= 0.70) {
+                // 2. 現在の範囲に「今すぐ出題可能なカード」があるか
+                const availableCount = activeCards.filter(c => {
+                    if ((c.level || 0) === 0) return true;
+                    if (!c.nextReviewDate) return true;
+                    return new Date(c.nextReviewDate).getTime() <= now;
+                }).length;
+
+                // 70%達成、または出題できる問題がゼロになったら問答無用で次のブロックを自動解放
+                if (availableCount === 0 || achievementRate >= 0.70) {
                     const nextChunkIncrement = Math.floor(Math.random() * 51) + 50;
                     deck.currentChunkIndex = Math.min(deck.currentChunkIndex + nextChunkIncrement, deck.cards.length);
                     currentEnd = deck.currentChunkIndex;
