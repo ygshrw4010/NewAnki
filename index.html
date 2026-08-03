@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="NewAnki">
-    <title>NewAnki</title>
+    <meta name="apple-mobile-web-app-title" content="暗記アプリ">
+    <title>暗記アプリ</title>
     <style>
         :root {
             --bg-primary: #f2f2f7;
@@ -425,8 +425,8 @@
                 </div>
 
                 <div id="empty-card-state" class="empty-state hidden">
-                    <p style="font-size: 15px; margin-bottom: 8px;">🎉 現在学習できる問題はありません</p>
-                    <p style="color: var(--text-secondary);">全問題暗記済みか、復習時間をお待ちください。</p>
+                    <p style="font-size: 15px; margin-bottom: 8px;">🎉 現在復習すべき問題はありません</p>
+                    <p style="color: var(--text-secondary);">次回の復習時間をお待ちいただくか、新しい範囲を開放してください。</p>
                 </div>
 
                 <div id="touch-overlay" class="touch-overlay">
@@ -458,6 +458,21 @@
     <script>
         const STORAGE_KEY = 'ANKI_APP_DECKS_DATA_V2';
 
+        // ブロック通過判定レベル（Level 4 = 12時間後復習へ到達）
+        const CHUNK_PASS_LEVEL = 4;
+
+        // 20分以内のプレイ時間に最適化した復習間隔（分単位）
+        const REVIEW_INTERVALS_MINUTES = {
+            0: 0,           // Level 0: 即時
+            1: 1,           // Level 1: 1分後
+            2: 4,           // Level 2: 4分後
+            3: 10,          // Level 3: 10分後
+            4: 12 * 60,     // Level 4: 12時間後
+            5: 24 * 60,     // Level 5: 1日後
+            6: 3 * 24 * 60, // Level 6: 3日後
+            7: 7 * 24 * 60, // Level 7: 7日後（卒業）
+        };
+
         let decks = [];
         let currentDeckId = null;
         let currentCard = null;
@@ -487,18 +502,15 @@
             localStorage.setItem(STORAGE_KEY, JSON.stringify(decks));
         }
 
-        // 現在の「開放範囲」の中で、今すぐ出題対象になる問題数をカウントする関数
         function getAvailableCardCount(deck) {
             if (!deck.cards || deck.cards.length === 0) return 0;
             
-            // Chunkがまだ未設定の場合は初期化時と同様に計算
             const chunkSize = deck.chunkSize || Math.floor(Math.random() * 51) + 50;
             const currentChunkIndex = deck.currentChunkIndex || Math.min(chunkSize, deck.cards.length);
             
             const activeCards = deck.cards.slice(0, currentChunkIndex);
             const now = new Date().getTime();
 
-            // 「未着手（Level 0）」または「復習期限（nextReviewDate）を過ぎた」問題をカウント
             return activeCards.filter(c => {
                 if ((c.level || 0) === 0) return true;
                 if (!c.nextReviewDate) return true;
@@ -591,6 +603,7 @@
             pickNextCard();
         }
 
+        // ブロック開放の判定関数（Level 4 以上のカードが70%以上で次を開放）
         function checkAndUpdateChunk(deck) {
             if (!deck.cards || deck.cards.length === 0) return;
 
@@ -599,14 +612,25 @@
                 deck.currentChunkIndex = Math.min(deck.chunkSize, deck.cards.length);
             }
 
-            const currentEnd = Math.min(deck.currentChunkIndex, deck.cards.length);
-            const activeCards = deck.cards.slice(0, currentEnd);
-            const masteredCount = activeCards.filter(c => (c.level || 0) >= 2).length;
+            let currentEnd = Math.min(deck.currentChunkIndex, deck.cards.length);
+            
+            // ループ処理で、70%達成している限り次のブロックを順次開放していく
+            while (currentEnd < deck.cards.length) {
+                const activeCards = deck.cards.slice(0, currentEnd);
+                
+                // Level 4 以上のカード数をカウント
+                const passedCount = activeCards.filter(c => (c.level || 0) >= CHUNK_PASS_LEVEL).length;
+                const achievementRate = passedCount / activeCards.length;
 
-            if (masteredCount >= Math.floor(activeCards.length * 0.8) && currentEnd < deck.cards.length) {
-                const nextChunkIncrement = Math.floor(Math.random() * 51) + 50;
-                deck.currentChunkIndex = Math.min(deck.currentChunkIndex + nextChunkIncrement, deck.cards.length);
-                saveData();
+                // 達成度が 70% (0.7) 以上の場合、次の 50〜100 問を開放
+                if (achievementRate >= 0.70) {
+                    const nextChunkIncrement = Math.floor(Math.random() * 51) + 50;
+                    deck.currentChunkIndex = Math.min(deck.currentChunkIndex + nextChunkIncrement, deck.cards.length);
+                    currentEnd = deck.currentChunkIndex;
+                    saveData();
+                } else {
+                    break;
+                }
             }
         }
 
@@ -626,12 +650,14 @@
 
             updateChunkInfo(currentEnd, deck.cards.length);
 
+            // 未着手(Level 0) のカードを優先して取得
             const urgentCards = activeCards.filter(c => (c.level || 0) === 0 && (!c.nextReviewDate || new Date(c.nextReviewDate).getTime() <= now));
             
             let chosen = null;
             if (urgentCards.length > 0) {
                 chosen = urgentCards[Math.floor(Math.random() * urgentCards.length)];
             } else {
+                // 復習予定日時が過ぎているカードを取得
                 const dueCards = activeCards.filter(c => !c.nextReviewDate || new Date(c.nextReviewDate).getTime() <= now);
                 if (dueCards.length > 0) {
                     chosen = dueCards[Math.floor(Math.random() * dueCards.length)];
@@ -718,7 +744,15 @@
             let card = deck.cards[cardIndex];
             if (isRight) {
                 card.level = (card.level || 0) + 1;
-                const intervalMinutes = Math.pow(3, card.level) * 30;
+                
+                let intervalMinutes;
+                if (REVIEW_INTERVALS_MINUTES[card.level]) {
+                    intervalMinutes = REVIEW_INTERVALS_MINUTES[card.level];
+                } else {
+                    const days = 7 * Math.pow(2, card.level - 7);
+                    intervalMinutes = Math.floor(days * 24 * 60);
+                }
+
                 card.nextReviewDate = new Date(Date.now() + intervalMinutes * 60 * 1000).toISOString();
                 triggerFlash('right');
             } else {
